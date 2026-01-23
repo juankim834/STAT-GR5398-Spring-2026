@@ -85,7 +85,7 @@ https://finrobot.ai
 ---
 
 ## Direction 3: FinGPT — Financial Sentiment Analysis with LLMs  
-**Difficulty: Medium (Data + Modeling Focus)**
+**Difficulty: Very High (Data + Modeling + Finetune Focus)**
 
 **FinGPT** is an open-source financial large language model project focused on real-world financial NLP tasks.
 
