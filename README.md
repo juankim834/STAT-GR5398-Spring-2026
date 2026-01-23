@@ -1,7 +1,7 @@
 # STAT GR5398 – MA Mentored Research (Spring 2026)  
 ## AI4Finance Open-Source Research Track
 
-This repository hosts the official project hub for **STAT GR5398 – [MA Mentored Research (Spring 2026)](https://ma.stat.columbia.edu/stat-gr5398-ma-mentored-research/)** at Columbia University, led by **Bruce Yang**, Founder & President of the **AI4Finance Foundation**.
+This repository hosts the official project hub for **[STAT GR5398](https://ma.stat.columbia.edu/stat-gr5398-ma-mentored-research/) – MA Mentored Research (Spring 2026)** at Columbia University, led by **Bruce Yang**, Founder & President of the **AI4Finance Foundation**.
 
 This course is designed as a **research-driven, open-source, and production-oriented** mentored research experience. Students will work on **real-world systems** that are already used by researchers, practitioners, and industry teams in quantitative finance and AI.
 
