@@ -10,7 +10,7 @@ In this assignment, we would like you to run a tutorial of FinRobot ( `/source_c
 + You will learn to use Expert/Shadow/UserProxy structure to get a better result
 + You should generate no less than 5 financial reports using different stocks in a same industry field (better if they have different stock trends)
   + You should start with `NVDA`, `AMD`, `INTC`, `APPL`, `GOOGL`, and then you can try some other fields
-+ After generating these 5 reports, write a basic analysis on their performance according to their historical performance and current market information
++ After generating these 5 reports, write a basic analysis on their performance according to their historical performance and current market information, and publish your analysis report (not AI-generated reports) as a blog onto [medium](https://medium.com/)
 + All of your code files and financial reports should be uploaded into a new folder in `/submissions` named as `Assignment1_Name_UNI` (NOT a new branch!)
 
 To find for more detailed informations, please refer to [FinRobot](https://github.com/AI4Finance-Foundation/FinRobot) and specific notebook file [agent_annual_report.ipynb](https://github.com/AI4Finance-Foundation/FinRobot/blob/master/tutorials_advanced/agent_annual_report.ipynb).
@@ -36,4 +36,5 @@ By separating execution, verification, and control into distinct agents, this st
 ### 3. Optimization (Optional)
 
 You can add some useful parts or financial ratios to let report reader have a better understanding of this company's performance.
+
 
