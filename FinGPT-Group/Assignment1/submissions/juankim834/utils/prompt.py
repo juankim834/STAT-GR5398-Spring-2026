@@ -5,6 +5,12 @@ import pandas as pd
 import json
 
 class promptGenerator(getRawData):
+    """
+    Generate prompts for stock market analysis by combining company news,
+    financial data, and historical price movements.
+    
+    Inherits from getRawData to access stock data retrieval functionality.
+    """
 
     DEFAULT_SYSTEM_PROMPT = (
         "You are a seasoned stock market analyst. Your task is to list the positive developments "
@@ -18,10 +24,28 @@ class promptGenerator(getRawData):
 
 
     def __init__(self, data_dir, stock_symbol, start_date, end_date, api_key, system_prompt=None):
-        super().__init__(data_dir, stock_symbol, start_date, end_date, api_key)
+        """
+        Initialize the prompt generator.
+        
+        Args:
+            stock_symbol (str): Stock ticker symbol (e.g., 'AAPL')
+            data_dir (str): Directory containing stock data CSV files
+            start_date (str): Start date for analysis period
+            end_date (str): End date for analysis period
+            api_key (str): API key for data retrieval services
+            system_prompt (str, optional): Custom system prompt. Defaults to DEFAULT_SYSTEM_PROMPT
+        """
+        super().__init__(stock_symbol, data_dir, start_date, end_date, api_key)
         self.system_prompt = system_prompt if system_prompt is not None else self.DEFAULT_SYSTEM_PROMPT
 
     def get_company_news(self):
+        """
+        Retrieve and format company profile information.
+        
+        Returns:
+            str: Formatted company introduction paragraph with key details like
+                 market cap, industry, exchange, and incorporation date
+        """
 
         profile = self.finnhub_client.company_profile2(symbol=self.stock_symbol)
 
@@ -33,6 +57,14 @@ class promptGenerator(getRawData):
         return formatted_str
     
     def get_prompt_by_row(self, row) -> Tuple[str, List[str], str]:
+
+        """
+        Retrieve and format company profile information.
+        
+        Returns:
+            str: Formatted company introduction paragraph with key details like
+                 market cap, industry, exchange, and incorporation date
+        """
 
         start_date = row['Start Date'] if isinstance(row['Start Date'], str) else row['Start Date'].strftime('%Y-%m-%d')
         end_date = row['End Date'] if isinstance(row['End Date'], str) else row['End Date'].strftime('%Y-%m-%d')
@@ -59,6 +91,17 @@ class promptGenerator(getRawData):
 
     def map_bin_label(self, bin_lb):
 
+        """
+        Randomly sample news items from a list.
+        
+        Args:
+            news (List[str]): List of news items
+            k (int, optional): Number of items to sample. Defaults to 5
+        
+        Returns:
+            List[str]: Randomly sampled news items in their original order
+        """
+
         lb = bin_lb.replace('U', 'up by ')
         lb = lb.replace('D', 'down by ')
         lb = lb.replace('1', '0-1%')
@@ -75,6 +118,28 @@ class promptGenerator(getRawData):
 
     def get_all_prompts(self, min_past_weeks=1, max_past_weeks=4, with_basics=True, return_chat_format=True) -> List[str]:
 
+        """
+        Generate all prompts for stock analysis based on historical data.
+        
+        For each week in the dataset, creates a prompt that includes:
+        - Company introduction
+        - Historical price movements and news from past weeks
+        - Basic financials (if with_basics=True)
+        - Prediction task for the upcoming week
+        
+        Args:
+            min_past_weeks (int, optional): Minimum weeks of history to include. Defaults to 1
+            max_past_weeks (int, optional): Maximum weeks of history to include. Defaults to 4
+            with_basics (bool, optional): Include basic financials in prompts. Defaults to True
+            return_chat_format (bool, optional): Return chat-formatted messages (for GPT models)
+                                                 vs. standard prompt format. Defaults to True
+        
+        Returns:
+            List: List of prompts, either as:
+                  - Chat format: List of dicts with 'role' and 'content' keys
+                  - Standard format: Formatted string prompts
+        """
+
         if with_basics:
             df = pd.read_csv(f'{self.data_dir}/{self.stock_symbol}_{self.start_date}_{self.end_date}.csv')
         else:
@@ -89,7 +154,7 @@ class promptGenerator(getRawData):
 
             prompt = ""
             if len(prev_rows) >= min_past_weeks:
-                idx = min(random.choice(range(min_past_weeks, max_past_weeks+1)), len(prev_rows))
+                idx = min(random.randint(min_past_weeks, max_past_weeks), len(prev_rows))
                 for i in range(-idx, 0):
                     # Add Price Movement (Head)
                     prompt += "\n" + prev_rows[i][0]
@@ -117,14 +182,12 @@ class promptGenerator(getRawData):
             prompt = company_prompt + '\n' + prompt + '\n' + basics
             prompt += f"\n\nBased on all the information before {row['Start Date']}, let's first analyze the positive developments and potential concerns for {self.stock_symbol}. Come up with 2-4 most important factors respectively and keep them concise. Most factors should be inferred from company related news. " \
                 f"Then let's assume your prediction for next week ({row['Start Date']} to {row['End Date']}) is {prediction}. Provide a summary analysis to support your prediction. The prediction result need to be inferred from your analysis at the end, and thus not appearing as a foundational factor of your analysis."
-
-            all_prompts.append(prompt.strip())
         
             if return_chat_format:
                 # Format A: Chat-based (Available for GPT-3.5-Turbo, GPT-4, etc.)
                 chat_messages = [
                     {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt} # Your original prompt here
+                    {"role": "user", "content": prompt.strip()} # Your original prompt here
                 ]
                 all_prompts.append(chat_messages)
             else:
