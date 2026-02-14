@@ -20,7 +20,7 @@ class getRawData():
 
         up_down = 'U' if ret >= 0 else 'D'
         integer = math.ceil(abs(100 * ret))
-        return up_down + (str(integer) if integer < 5 else '5+')
+        return up_down + (str(integer) if integer <= 5 else '5+')
     
     def get_returns(self) -> pd.DataFrame:
 
@@ -32,7 +32,7 @@ class getRawData():
         """
         stock_data = yf.download(self.stock_symbol, start=self.start_date, end=self.end_date)
 
-        weekly_data = stock_data['Adj Close'].resample('W').fill()
+        weekly_data = stock_data['Adj Close'].resample('W').ffill()
         weekly_returns = weekly_data.pct_change()[1:]
         weekly_start_prices = weekly_data[:-1]
         weekly_end_prices = weekly_data[1:]
@@ -62,7 +62,7 @@ class getRawData():
 
             weekly_news = [
                 {
-                    "date": datetime.fromtimestamp(news_item['datetime']).strftime('%Y-%m-%d'),
+                    "date": datetime.fromtimestamp(news_item['datetime']).strftime('%Y%m%d%H%M%S'),
                     "headline": news_item['headline'],
                     "summary": news_item['summary'],
                 } for news_item in weekly_news
@@ -70,7 +70,7 @@ class getRawData():
             weekly_news.sort(key=lambda x: x['date'])
             news_list.append(json.dumps(weekly_news))
 
-            data['News'] = news_list
+        data['News'] = news_list
 
         return data
     
@@ -114,7 +114,9 @@ def prepare_data_for_company(stock_symbol, start_date, end_date, api_key, data_d
     news_data = data_processor.get_news(returns_data)
     if with_basics:
         news_data = data_processor.get_basics(news_data, always)
+        news_data.to_csv(f"{data_dir}/{stock_symbol}_{start_date}_{end_date}.csv")
     else:
         news_data['Basics'] = [json.dumps({})] * len(news_data)
+        news_data.to_csv(f"{data_dir}/{stock_symbol}_{start_date}_{end_date}_nobasics.csv")
 
     return news_data
