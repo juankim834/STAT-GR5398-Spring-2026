@@ -72,7 +72,7 @@ class LLMRunner:
         Returns:
             promptGenerator: Configured prompt generator instance
         """
-        return prompt_gen(stock_symbol, self.data_dir, self.start_date, self.end_date, api_key=self.client.api_key)
+        return prompt_gen(self.data_dir, stock_symbol, self.start_date, self.end_date, api_key=self.client.api_key)
     
     def query_gpt4(self, symbol_list, min_past_weeks=1, max_past_weeks=3, with_basics=True):
         """

@@ -35,7 +35,7 @@ class promptGenerator(getRawData):
             api_key (str): API key for data retrieval services
             system_prompt (str, optional): Custom system prompt. Defaults to DEFAULT_SYSTEM_PROMPT
         """
-        super().__init__(stock_symbol, data_dir, start_date, end_date, api_key)
+        super().__init__(data_dir, stock_symbol, start_date, end_date, api_key)
         self.system_prompt = system_prompt if system_prompt is not None else self.DEFAULT_SYSTEM_PROMPT
 
     def get_company_news(self):
