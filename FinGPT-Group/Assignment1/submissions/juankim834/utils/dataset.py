@@ -26,9 +26,7 @@ class getRawData():
 
         """
         get_returns
-        Download historical stock data using yfinance
-        
-        :param self: 说明
+            Download historical stock data using yfinance, resample it to weekly frequency, and calculate weekly returns.
         """
         stock_data = yf.download(self.stock_symbol, start=self.start_date, end=self.end_date)
 
@@ -50,6 +48,14 @@ class getRawData():
         return weekly_data
 
     def get_news(self, data) -> pd.DataFrame:
+        """
+        get_news
+            For each week defined by the 'Start Date' and 'End Date' in the input DataFrame, fetch news articles related to the stock symbol using the Finnhub API. The news articles are stored as a JSON string in a new column called 'News'.
+
+        :param data: A DataFrame containing 'Start Date' and 'End Date' columns that define the weekly periods for which news articles will be fetched.
+        :return: A DataFrame with an additional 'News' column containing JSON strings of news articles for each week.
+        :rtype: DataFrame
+        """
 
         news_list = []
         
