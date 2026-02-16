@@ -3,7 +3,7 @@ import os
 import time
 import pandas as pd
 from openai import OpenAI
-from prompt import promptGenerator as prompt_gen
+from utils import promptGenerator as prompt_gen
 
 
 class LLMRunner:
