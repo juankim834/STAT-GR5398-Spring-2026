@@ -8,11 +8,14 @@ from rouge_score import rouge_scorer
 
 lora_module_dict = {
     'chatglm2': ['query_key_value'],
-    'llama2': [
+    'llama3': [
         'q_proj', 'k_proj', 'v_proj',
         'o_proj', 'gate_proj', 'up_proj', 'down_proj',
         # 'embed_tokens', 'lm_head',
     ],
+    'deepseek-llama8b': [
+        'q_proj', 'k_proj', 'v_proj',
+    ]
 }
 
 
@@ -50,22 +53,56 @@ def parse_model_name(name, from_remote=False):
         return 'THUDM/chatglm2-6b' if from_remote else 'base_models/chatglm2-6b'
     elif name == 'llama2':
         return 'meta-llama/Llama-2-7b-chat-hf' # if from_remote else 'base_models/Llama-2-7b-chat-hf'
+    elif name == 'deepseek-llama8b':
+        return 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B' if from_remote else 'base_models/DeepSeek-R1-Distill-Llama-8B'
     else:
         raise ValueError(f"Undefined base model {name}")
         
     
 def load_dataset(names, from_remote=False):
+    """
+    load_dataset
+        Load dataset from Hugging Face or local disk cache. If the dataset does not exist in local cache, it will be downloaded from Hugging Face and saved to local cache for future use. If the dataset does not exist in Hugging Face, it will raise an error.
+        
+    :param names: A comma-separated string of dataset names. Each name can be optionally followed by '*N' to indicate that the dataset should be repeated N times in the returned list. 
+    :param from_remote: If True, forces loading the dataset from Hugging Face even if it exists in local cache. If False, it will try to load from local cache first before falling back to Hugging Face.
+    :return: A list of datasets corresponding to the provided names, with repetitions as specified.
+    """
     
     dataset_names = [d for d in names.split(',')]
     dataset_list = []
+
+    LOCAL_DATA_DIR = './dataset_cache/'
     
-    for name in dataset_names:
+    for origin_name in dataset_names:
         rep = 1
-        if not os.path.exists(name):
-            rep = int(name.split('*')[1]) if '*' in name else 1
-            name = ('FinGPT/fingpt-forecaster-' if from_remote else 'data/fingpt-forecaster-') + name.split('*')[0]
-        tmp_dataset = datasets.load_dataset(name) if from_remote else datasets.load_from_disk(name)
-    
+        local_exist = False
+
+        if '*' in origin_name:
+            rep = int(origin_name.split('*')[1]) if '*' in origin_name else 1
+            cleaned_name = origin_name.split('*')[0]
+        else:
+            cleaned_name = origin_name
+
+        local_dir = f"fingpt-forecaster-{cleaned_name}"
+        cache_path = os.path.join(LOCAL_DATA_DIR, local_dir)
+        local_exist = os.path.exists(cache_path)
+        tmp_dataset = None
+        if from_remote or not local_exist:
+            try:
+                full_name = f"FinGPT/fingpt-forecaster-{cleaned_name}"
+                tmp_dataset = datasets.load_dataset(full_name)
+                tmp_dataset.save_to_disk(cache_path)
+            except Exception as e:
+                print(f"Failed to load dataset from Hugging Face at {full_name}: {e}")
+        elif local_exist:
+            try:
+                tmp_dataset = datasets.load_from_disk(cache_path)
+            except Exception as e:
+                print(f"Failed to load dataset from disk at {cache_path}: {e}")
+        if tmp_dataset is None:
+            raise ValueError(f"Dataset {origin_name} could not be loaded from either Hugging Face or local disk.")
+
         if 'test' not in tmp_dataset:
             tmp_dataset = tmp_dataset.train_test_split(0.2, shuffle=True, seed=42)   
         dataset_list.extend([tmp_dataset] * rep)

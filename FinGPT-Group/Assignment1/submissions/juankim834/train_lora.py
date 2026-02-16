@@ -14,7 +14,9 @@ import argparse
 from datetime import datetime
 from functools import partial
 from tqdm import tqdm
-from utils import *
+from utils.llm_utils import *
+from dotenv import load_dotenv
+load_dotenv()
 
 # LoRA
 from peft import (
@@ -22,13 +24,14 @@ from peft import (
     LoraConfig,
     get_peft_model,
     get_peft_model_state_dict,
-    prepare_model_for_int8_training,
+    prepare_model_for_kbit_training,
     set_peft_model_state_dict,   
 )
 
 # Replace with your own api_key and project name
-os.environ['WANDB_API_KEY'] = ''    # TODO: Replace with your environment variable
+# os.environ['WANDB_API_KEY'] = ''    # TODO: Replace with your environment variable
 os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
+wandb.login(key=os.environ['WANDB_API_KEY'])
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 cache_dir = "./pretrained-models"
@@ -99,11 +102,11 @@ def main(args):
     # load model
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        load_in_8bit=True,
+        # load_in_8bit=True,
         trust_remote_code=True,
-        device_map=None,
+        device_map="auto",
         cache_dir=cache_dir,
-        torch_dtype=torch.bfloat16
+        torch_dtype=torch.float16
     )
     if args.local_rank == 0:
         print(model)
@@ -158,7 +161,7 @@ def main(args):
         save_steps=args.eval_steps,
         eval_steps=args.eval_steps,
         fp16=True,
-        deepspeed=args.ds_config,
+        # deepspeed=args.ds_config,
         eval_strategy=args.evaluation_strategy,
         remove_unused_columns=False,
         report_to='wandb',
@@ -171,7 +174,7 @@ def main(args):
     model.model_parallel = True
     model.model.config.use_cache = False
     
-    model = prepare_model_for_int8_training(model)
+    # model = prepare_model_for_kbit_training(model)
 
     # setup peft
     peft_config = LoraConfig(
@@ -223,7 +226,7 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", default='local-test', type=str)
     parser.add_argument("--dataset", required=True, type=str)
     parser.add_argument("--test_dataset", type=str)
-    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2'])
+    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2', 'llama3'])
     parser.add_argument("--max_length", default=512, type=int)
     parser.add_argument("--batch_size", default=4, type=int, help="The train batch size per device")
     parser.add_argument("--learning_rate", default=1e-4, type=float, help="The learning rate")
