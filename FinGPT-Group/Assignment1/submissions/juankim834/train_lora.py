@@ -1,5 +1,5 @@
 from transformers.integrations import TensorBoardCallback
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, BitsAndBytesConfig
 from transformers import TrainingArguments, Trainer, DataCollatorForSeq2Seq
 from transformers import TrainerCallback, TrainerState, TrainerControl
 from transformers.trainer import TRAINING_ARGS_NAME
@@ -66,7 +66,7 @@ class GenerationEvalCallback(TrainerCallback):
                 gt = feature['answer']
                 inputs = tokenizer(
                     prompt, return_tensors='pt',
-                    padding=False, max_length=4096
+                    padding=False, max_length=2048
                 )
                 inputs = {key: value.to(model.device) for key, value in inputs.items()}
                 
@@ -98,15 +98,20 @@ def main(args):
     # model_name = parse_model_name(args.base_model, args.from_remote)
     # model_name = "meta-llama/Llama-3.1-8B"
     model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_8bit=args.load_in_8bit,
+    )
     
     # load model
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        # load_in_8bit=True,
+        quantization_config=bnb_config,
         trust_remote_code=True,
-        device_map="auto",
+        # device_map="auto",
+        device_map="cuda:0",
         cache_dir=cache_dir,
-        torch_dtype=torch.float16
+        dtype=torch.bfloat16
     )
     if args.local_rank == 0:
         print(model)
@@ -161,20 +166,22 @@ def main(args):
         save_steps=args.eval_steps,
         eval_steps=args.eval_steps,
         fp16=True,
-        # deepspeed=args.ds_config,
+        deepspeed=args.ds_config,
         eval_strategy=args.evaluation_strategy,
         remove_unused_columns=False,
         report_to='wandb',
-        run_name=args.run_name
+        run_name=args.run_name,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
     )
     
-    model.gradient_checkpointing_enable()
+    # model.gradient_checkpointing_enable()
     model.enable_input_require_grads()
-    model.is_parallelizable = True
-    model.model_parallel = True
+    # model.is_parallelizable = True
+    # model.model_parallel = True
     model.model.config.use_cache = False
     
-    # model = prepare_model_for_kbit_training(model)
+    model = prepare_model_for_kbit_training(model)
 
     # setup peft
     peft_config = LoraConfig(
@@ -194,7 +201,7 @@ def main(args):
         args=training_args, 
         train_dataset=dataset['train'],
         eval_dataset=dataset['test'], 
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=DataCollatorForSeq2Seq(
             tokenizer, padding=True,
             return_tensors="pt"
@@ -209,14 +216,14 @@ def main(args):
         ]
     )
     
-    if torch.__version__ >= "2" and sys.platform != "win32":
-        model = torch.compile(model)
+    # if torch.__version__ >= "2" and sys.platform != "win32":
+    #     model = torch.compile(model)
     
     torch.cuda.empty_cache()
     trainer.train()
 
     # save model
-    model.save_pretrained(training_args.output_dir)
+    trainer.save_model(training_args.output_dir)
 
 
 if __name__ == "__main__":
@@ -226,13 +233,13 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", default='local-test', type=str)
     parser.add_argument("--dataset", required=True, type=str)
     parser.add_argument("--test_dataset", type=str)
-    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2', 'llama3'])
+    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2', 'deepseek-llama8b'])
     parser.add_argument("--max_length", default=512, type=int)
-    parser.add_argument("--batch_size", default=4, type=int, help="The train batch size per device")
+    parser.add_argument("--batch_size", default=1, type=int, help="The train batch size per device")
     parser.add_argument("--learning_rate", default=1e-4, type=float, help="The learning rate")
     parser.add_argument("--weight_decay", default=0.01, type=float, help="weight decay")
     parser.add_argument("--num_epochs", default=8, type=float, help="The training epochs")
-    parser.add_argument("--num_workers", default=8, type=int, help="dataloader workers")
+    parser.add_argument("--num_workers", default=0, type=int, help="dataloader workers")
     parser.add_argument("--log_interval", default=20, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=8, type=int)
     parser.add_argument("--warmup_ratio", default=0.05, type=float)
@@ -241,7 +248,8 @@ if __name__ == "__main__":
     parser.add_argument("--instruct_template", default='default')
     parser.add_argument("--evaluation_strategy", default='steps', type=str)    
     parser.add_argument("--eval_steps", default=0.1, type=float)    
-    parser.add_argument("--from_remote", default=False, type=bool)    
+    parser.add_argument("--from_remote", default=False, type=bool)  
+    parser.add_argument("--load_in_8bit", default=True, type=bool, action='store_true')
     args = parser.parse_args()
     
     wandb.login()
