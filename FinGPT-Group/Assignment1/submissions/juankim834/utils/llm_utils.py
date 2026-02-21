@@ -15,6 +15,7 @@ lora_module_dict = {
     ],
     'deepseek-llama8b': [
         'q_proj', 'k_proj', 'v_proj',
+        'o_proj', 'gate_proj', 'up_proj', 'down_proj', 
     ]
 }
 
@@ -51,15 +52,15 @@ def parse_model_name(name, from_remote=False):
     
     if name == 'chatglm2':
         return 'THUDM/chatglm2-6b' if from_remote else 'base_models/chatglm2-6b'
-    elif name == 'llama2':
-        return 'meta-llama/Llama-2-7b-chat-hf' # if from_remote else 'base_models/Llama-2-7b-chat-hf'
+    elif name == 'llama3':
+        return 'meta-llama/Llama-2-7b-chat-hf' if from_remote else 'base_models/Llama-2-7b-chat-hf'
     elif name == 'deepseek-llama8b':
         return 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B' if from_remote else 'base_models/DeepSeek-R1-Distill-Llama-8B'
     else:
         raise ValueError(f"Undefined base model {name}")
         
     
-def load_dataset(names, from_remote=False):
+def load_dataset(names, from_remote=False, split_seed=42):
     """
     load_dataset
         Load dataset from Hugging Face or local disk cache. If the dataset does not exist in local cache, it will be downloaded from Hugging Face and saved to local cache for future use. If the dataset does not exist in Hugging Face, it will raise an error.
@@ -104,7 +105,7 @@ def load_dataset(names, from_remote=False):
             raise ValueError(f"Dataset {origin_name} could not be loaded from either Hugging Face or local disk.")
 
         if 'test' not in tmp_dataset:
-            tmp_dataset = tmp_dataset.train_test_split(0.2, shuffle=True, seed=42)   
+            tmp_dataset = tmp_dataset.train_test_split(0.2, shuffle=True, seed=split_seed)   
         dataset_list.extend([tmp_dataset] * rep)
     
     return dataset_list
@@ -112,31 +113,41 @@ def load_dataset(names, from_remote=False):
 
 def parse_answer(answer):
     
-    match_res = re.match(r"^\s*\[Positive Developments\]:\s*(.*)\s*\[Potential Concerns\]:\s*(.*)\s*\[Prediction (&|and) Analysis\]:\s*(.*)\s*$", answer, flags=re.DOTALL)
+    match_res = re.match(
+        r"^\s*\[Positive Developments\]:\s*(.*?)\s*\[Potential Concerns\]:\s*(.*?)\s*\[Prediction\s*(?:&|and)\s*Analysis\]:\s*(.*?)\s*$",
+        answer.strip(), flags=re.DOTALL
+    )
     if not match_res:
         return None
     
-    pros, cons, pna = match_res.group(1), match_res.group(2), match_res.group(4)
-        
-    match_res = re.match(r'^Prediction:\s*(.*)\s*Analysis:\s*(.*)\s*$', pna, flags=re.DOTALL)
-    if not match_res:
-        return None
-        
-    pred, anal = match_res.group(1), match_res.group(2)
-        
-    if re.search(r'up|increase', pred.lower()):
+    pros = match_res.group(1).strip()
+    cons = match_res.group(2).strip()
+    pna  = match_res.group(3).strip()  # group(3) now, not group(4)
+    
+    # Try strict format: "Prediction: ... Analysis: ..."
+    match_strict = re.match(r'^Prediction:\s*(.*?)\s*Analysis:\s*(.*)\s*$', pna, flags=re.DOTALL)
+    if match_strict:
+        pred = match_strict.group(1).strip()
+        anal = match_strict.group(2).strip()
+    else:
+        # No labels — use whole paragraph
+        pred = pna
+        anal = pna
+
+    # Direction
+    if re.search(r'upward|up|increase|slight increase|rise|grow', pred.lower()):
         pred_bin = 1
-    elif re.search(r'down|decrease|decline', pred.lower()):
+    elif re.search(r'downward|down|decrease|decline|drop|fall', pred.lower()):
         pred_bin = -1
     else:
         pred_bin = 0
-            
-    match_res = re.search(r'(\d)-(\d)%', pred)
-    if not match_res:
-        match_res = re.search(r'(?:more than )?(\d)+?%', pred)    
-        
-    pred_margin = pred_bin * (int(match_res.group(1)) + 0.5) if match_res else 0.
-        
+
+    # Percentage
+    pct_match = re.search(r'(\d)-(\d)%', pred)
+    if not pct_match:
+        pct_match = re.search(r'(\d+)%', pred)
+    pred_margin = pred_bin * (int(pct_match.group(1)) + 0.5) if pct_match else pred_bin * 1.5
+
     return {
         "positive developments": pros,
         "potential concerns": cons,
@@ -165,14 +176,13 @@ def calc_metrics(answers, gts):
     gts_dict = defaultdict(list)
     
     for answer, gt in zip(answers, gts):
-        answer_dict = parse_answer(answer)
-        gt_dict = parse_answer(gt)
+        answer_dict = parse_answer_auto(answer)
+        gt_dict = parse_answer_auto(gt)
         
         if answer_dict and gt_dict:
             for k in answer_dict.keys():
                 answers_dict[k].append(answer_dict[k])
                 gts_dict[k].append(gt_dict[k])
-    
     if not answers_dict['prediction']:
         return {}
     
@@ -196,4 +206,99 @@ def calc_metrics(answers, gts):
         "cons_rouge_scores": cons_rouge_scores,
         "anal_rouge_scores": anal_rouge_scores
     }
+
+def parse_answer_bold(answer):
     
+    template_match = re.search(r'\*{0,2}TEMPLATE\*{0,2}:?\s*\n(.*?)$', answer, flags=re.DOTALL)
+    if template_match:
+        answer = template_match.group(1).strip()
+    
+    match_res = re.match(
+        r"\*{0,2}Positive Developments\*{0,2}:?\s*\n(.*?)\*{0,2}Potential Concerns\*{0,2}:?\s*\n(.*?)\*{0,2}Prediction\s*(?:&|and)\s*Analysis\*{0,2}:?\s*\n(.*?)$",
+        answer.strip(), flags=re.DOTALL
+    )
+    if not match_res:
+        return None
+    
+    pros = match_res.group(1).strip()
+    cons = match_res.group(2).strip()
+    pna  = match_res.group(3).strip()
+
+    pred_match = re.search(r'-?\s*\*{0,2}Prediction\*{0,2}:?\s*\*{0,2}(.*?)\*{0,2}\.?\s*\n', pna)
+    anal_match = re.search(r'-?\s*\*{0,2}Analysis\*{0,2}:?\s*(.*?)$', pna, flags=re.DOTALL)
+    
+    pred = pred_match.group(1).strip() if pred_match else pna
+    anal = anal_match.group(1).strip() if anal_match else pna
+
+    if re.search(r'upward|up|increase|rise|grow', pred.lower()):
+        pred_bin = 1
+    elif re.search(r'downward|down|decrease|decline|drop|fall|sideways', pred.lower()):
+        pred_bin = -1
+    else:
+        pred_bin = 0
+
+    pct_match = re.search(r'(\d)-(\d)%', pred)
+    if not pct_match:
+        pct_match = re.search(r'(\d+)%', pred)
+    pred_margin = pred_bin * (int(pct_match.group(1)) + 0.5) if pct_match else pred_bin * 1.5
+
+    return {
+        "positive developments": pros,
+        "potential concerns": cons,
+        "prediction": pred_margin,
+        "prediction_binary": pred_bin,
+        "analysis": anal
+    }
+
+
+def parse_answer_auto(answer):
+    
+    if '[Positive Developments]' in answer:
+        return parse_answer(answer)  # original bracket format
+    
+    elif '**Positive Developments**' in answer or '**TEMPLATE**' in answer:
+        return parse_answer_bold(answer)  # bold format
+    
+    elif '### Positive Developments' in answer:
+        return parse_answer_hash(answer)  # ### header format
+    
+    else:
+        return None
+
+
+def parse_answer_hash(answer):
+    """Handles ### Section format (Qwen base model output)."""
+    
+    pros_match = re.search(r'###\s*Positive Developments:?(.*?)###\s*Potential Concerns:', answer, flags=re.DOTALL)
+    cons_match = re.search(r'###\s*Potential Concerns:?(.*?)###\s*Prediction', answer, flags=re.DOTALL)
+    pred_match = re.search(r'####\s*Prediction:?\s*\n-?\s*\*{0,2}(.*?)\*{0,2}\n', answer)
+    anal_match = re.search(r'####\s*Analysis:?\s*\n-\s*\*{0,2}.*?\*{0,2}:(.*?)$', answer, flags=re.DOTALL)
+
+    if not pros_match or not cons_match:
+        return None
+
+    pros = pros_match.group(1).strip()
+    cons = cons_match.group(1).strip()
+    pred = pred_match.group(1).strip() if pred_match else ""
+    anal = anal_match.group(1).strip() if anal_match else ""
+
+    # Direction
+    if re.search(r'upward|up|increase|rise|grow', pred.lower()):
+        pred_bin = 1
+    elif re.search(r'downward|down|decrease|decline|drop|fall|sideways', pred.lower()):
+        pred_bin = -1
+    else:
+        pred_bin = 0
+
+    pct_match = re.search(r'(\d)-(\d)%', pred)
+    if not pct_match:
+        pct_match = re.search(r'(\d+)%', pred)
+    pred_margin = pred_bin * (int(pct_match.group(1)) + 0.5) if pct_match else pred_bin * 1.5
+
+    return {
+        "positive developments": pros,
+        "potential concerns": cons,
+        "prediction": pred_margin,
+        "prediction_binary": pred_bin,
+        "analysis": anal
+    }
