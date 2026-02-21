@@ -30,8 +30,8 @@ from peft import (
 
 # Replace with your own api_key and project name
 # os.environ['WANDB_API_KEY'] = ''    # TODO: Replace with your environment variable
-os.environ['WANDB_PROJECT'] = 'fingpt-forecaster'
-wandb.login(key=os.environ['WANDB_API_KEY'])
+os.environ['WANDB_PROJECT'] = 'fingpt-project-deepseek-llama8b'
+wandb.login()
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 cache_dir = "./pretrained-models"
@@ -95,18 +95,18 @@ class GenerationEvalCallback(TrainerCallback):
 
 def main(args):
         
-    # model_name = parse_model_name(args.base_model, args.from_remote)
+    model_name = parse_model_name(args.base_model, args.from_remote)
     # model_name = "meta-llama/Llama-3.1-8B"
-    model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+    # model_name = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
 
-    bnb_config = BitsAndBytesConfig(
-        load_in_8bit=args.load_in_8bit,
-    )
+    # bnb_config = BitsAndBytesConfig(
+    #     load_in_8bit=args.load_in_8bit,
+    # )
     
     # load model
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        quantization_config=bnb_config,
+        # quantization_config=bnb_config,
         trust_remote_code=True,
         # device_map="auto",
         device_map="cuda:0",
@@ -126,7 +126,7 @@ def main(args):
     
     # load data
     # dataset_fname = "./data/" + args.dataset
-    dataset_list = load_dataset("dow30-202305-202405", from_remote=True)
+    dataset_list = load_dataset(args.dataset, from_remote=args.from_remote)
     
     dataset_train = datasets.concatenate_datasets([d['train'] for d in dataset_list]).shuffle(seed=42)
     
@@ -152,7 +152,7 @@ def main(args):
     formatted_time = current_time.strftime('%Y%m%d%H%M')
     
     training_args = TrainingArguments(
-        output_dir=f'finetuned_models/{args.run_name}_{formatted_time}', # 保存位置
+        output_dir=f'finetuned_models/{args.run_name}_{formatted_time}',
         logging_steps=args.log_interval,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=args.batch_size,
@@ -165,8 +165,9 @@ def main(args):
         lr_scheduler_type=args.scheduler,
         save_steps=args.eval_steps,
         eval_steps=args.eval_steps,
-        fp16=True,
-        deepspeed=args.ds_config,
+        # fp16=True,
+        bf16=True,
+        # deepspeed=args.ds_config,
         eval_strategy=args.evaluation_strategy,
         remove_unused_columns=False,
         report_to='wandb',
@@ -181,7 +182,7 @@ def main(args):
     # model.model_parallel = True
     model.model.config.use_cache = False
     
-    model = prepare_model_for_kbit_training(model)
+    # model = prepare_model_for_kbit_training(model)
 
     # setup peft
     peft_config = LoraConfig(
@@ -233,7 +234,7 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", default='local-test', type=str)
     parser.add_argument("--dataset", required=True, type=str)
     parser.add_argument("--test_dataset", type=str)
-    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama2', 'deepseek-llama8b'])
+    parser.add_argument("--base_model", required=True, type=str, choices=['chatglm2', 'llama3', 'deepseek-llama8b'])
     parser.add_argument("--max_length", default=512, type=int)
     parser.add_argument("--batch_size", default=1, type=int, help="The train batch size per device")
     parser.add_argument("--learning_rate", default=1e-4, type=float, help="The learning rate")
@@ -248,9 +249,7 @@ if __name__ == "__main__":
     parser.add_argument("--instruct_template", default='default')
     parser.add_argument("--evaluation_strategy", default='steps', type=str)    
     parser.add_argument("--eval_steps", default=0.1, type=float)    
-    parser.add_argument("--from_remote", default=False, type=bool)  
-    parser.add_argument("--load_in_8bit", default=True, type=bool, action='store_true')
+    parser.add_argument("--from_remote", action='store_true', help="Load dataset from remote")
+    parser.add_argument("--load_in_8bit", action='store_true', help="Use 8-bit quantization")
     args = parser.parse_args()
-    
-    wandb.login()
     main(args)
