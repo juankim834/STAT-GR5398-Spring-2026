@@ -1,7 +1,3 @@
-"""
-Full preprocessing pipeline for Assignment 1.
-Implements all steps from the assignment spec.
-"""
 
 import pandas as pd
 import numpy as np
@@ -15,9 +11,6 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 FUND_FILE = '/home/claude/sp500_tickers_fundamental_quarterly_synthetic.csv'
 PRICE_FILE = '/home/claude/sp500_tickers_daily_price_synthetic.csv'
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 1: Load data
-# ─────────────────────────────────────────────────────────────────────────────
 print("=" * 70)
 print("STEP 1: Loading data")
 print("=" * 70)
@@ -28,17 +21,11 @@ price_df = pd.read_csv(PRICE_FILE, usecols=['gvkey','tic','datadate','prccd','aj
 fund_df['datadate'] = pd.to_datetime(fund_df['datadate'])
 price_df['datadate'] = pd.to_datetime(price_df['datadate'])
 
-print(f"Fundamental data: {fund_df.shape}")
-print(f"Daily price data:  {price_df.shape}")
-print(f"Tickers in fund:   {fund_df.tic.nunique()}")
-print(f"Tickers in price:  {price_df.tic.nunique()}")
+print(fund_df.shape)
+print(price_df.shape)
+print(fund_df.tic.nunique())
+print(price_df.tic.nunique())
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2.1: Adjust trade dates
-# Two-month lag beyond quarter end so no look-ahead bias.
-# Quarter ends: Mar→use Jun 1, Jun→use Sep 1, Sep→use Dec 1, Dec→use Mar 1 next yr
-# ─────────────────────────────────────────────────────────────────────────────
-print("\nSTEP 2.1: Adjusting trade dates (2-month lag)...")
 
 def adjust_trade_date(d):
     m = d.month
@@ -54,22 +41,11 @@ def adjust_trade_date(d):
 
 fund_df['tradedate'] = fund_df['datadate'].apply(adjust_trade_date)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2.1b: Adjusted close price
-# ─────────────────────────────────────────────────────────────────────────────
 fund_df['adj_close_q'] = fund_df['prccq'] / fund_df['adjex']
-
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2.1c: Match tickers between datasets
-# ─────────────────────────────────────────────────────────────────────────────
 common_tickers = set(fund_df.tic.unique()) & set(price_df.tic.unique())
 fund_df = fund_df[fund_df.tic.isin(common_tickers)].copy()
 print(f"Common tickers: {len(common_tickers)}")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2.2: Calculate next quarter log-return
-# y_t = log(S_{t+1} / S_t)
-# ─────────────────────────────────────────────────────────────────────────────
 print("\nSTEP 2.2: Calculating next-quarter log-returns...")
 
 fund_df['date'] = fund_df['tradedate']
@@ -82,18 +58,14 @@ fund_df['y_return'] = (
     .transform(lambda x: np.log(x.shift(-1) / x))
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2.3: Calculate basic valuation ratios
-# ─────────────────────────────────────────────────────────────────────────────
 print("\nSTEP 2.3: Calculating valuation ratios (PE, PS, PB)...")
 
 fund_df['pe'] = fund_df['prccq'] / fund_df['epspiy'].replace(0, np.nan)
 fund_df['ps'] = fund_df['prccq'] / (fund_df['revtq'] / fund_df['cshoq']).replace(0, np.nan)
 fund_df['pb'] = fund_df['prccq'] / ((fund_df['atq'] - fund_df['ltq']) / fund_df['cshoq']).replace(0, np.nan)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Select and rename columns
-# ─────────────────────────────────────────────────────────────────────────────
+
+
 items = [
     'date','gvkey','tic','gsector',
     'oiadpq','revtq','niq','atq','teqq','epspiy','ceqq','cshoq','dvpspq',
@@ -108,9 +80,6 @@ fund_data = fund_df[items].rename(columns={
     'apq':'payables','dlttq':'long_debt','dlcq':'short_debt','ltq':'tot_liabilities'
 }).reset_index(drop=True)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2.3: Calculate comprehensive financial ratios (vectorized)
-# ─────────────────────────────────────────────────────────────────────────────
 print("\nSTEP 2.3: Calculating comprehensive financial ratios (vectorized)...")
 
 def trailing_4q_ratio(df, num_col, denom_col=None, denom_point=False):
@@ -132,7 +101,6 @@ def trailing_4q_ratio(df, num_col, denom_col=None, denom_point=False):
             result.loc[idx] = num_roll / denom_roll.replace(0, np.nan)
     return result
 
-# Profitability (trailing 12-month = sum of 4 quarters)
 fund_data['OPM'] = trailing_4q_ratio(fund_data, 'op_inc_q', 'rev_q')          # Operating Margin
 fund_data['NPM'] = trailing_4q_ratio(fund_data, 'net_inc_q', 'rev_q')         # Net Profit Margin
 fund_data['ROA'] = trailing_4q_ratio(fund_data, 'net_inc_q', 'tot_assets', denom_point=True)
@@ -148,7 +116,7 @@ fund_data['cur_ratio']   = fund_data['cur_assets']  / fund_data['cur_liabilities
 fund_data['quick_ratio'] = (fund_data['cash_eq'] + fund_data['receivables']) / fund_data['cur_liabilities'].replace(0, np.nan)
 fund_data['cash_ratio']  = fund_data['cash_eq'] / fund_data['cur_liabilities'].replace(0, np.nan)
 
-# Efficiency (trailing 4Q numerator, point-in-time denominator)
+# Efficiency 
 fund_data['inv_turnover']      = trailing_4q_ratio(fund_data, 'cogs_q', 'inventories', denom_point=True)
 fund_data['acc_rec_turnover']  = trailing_4q_ratio(fund_data, 'rev_q', 'receivables', denom_point=True)
 fund_data['acc_pay_turnover']  = trailing_4q_ratio(fund_data, 'cogs_q', 'payables', denom_point=True)
@@ -157,10 +125,8 @@ fund_data['acc_pay_turnover']  = trailing_4q_ratio(fund_data, 'cogs_q', 'payable
 fund_data['debt_ratio']      = fund_data['tot_liabilities'] / fund_data['tot_assets'].replace(0, np.nan)
 fund_data['debt_to_equity']  = fund_data['tot_liabilities'] / fund_data['sh_equity'].replace(0, np.nan)
 
-# Valuation
-# pe, ps, pb already calculated
 
-# Final column selection
+# Final Sele
 ratio_cols = [
     'date','gvkey','tic','gsector','adj_close_q','y_return',
     'OPM','NPM','ROA','ROE','EPS','BPS','DPS',
@@ -172,12 +138,10 @@ ratios = fund_data[ratio_cols].copy()
 
 print(f"Ratios shape before cleaning: {ratios.shape}")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2.4: Split by sector and handle missing data per sector
-# Rule: if a factor has >5% missing → drop factor
-#        if a stock generates the most missing data → drop that stock
-# ─────────────────────────────────────────────────────────────────────────────
-print("\nSTEP 2.4: Sector split + per-sector missing data handling...")
+
+
+
+
 
 GICS_NAMES = {
     10: 'Energy', 15: 'Materials', 20: 'Industrials',
@@ -209,14 +173,14 @@ for sector, sname in GICS_NAMES.items():
 
     feat_cols_available = [c for c in FEATURE_COLS if c in df_sec.columns]
 
-    # ── Drop factors with >5% missing ────────────────────────────────────
+    # Drop factors with >5% missing 
     missing_pct = df_sec[feat_cols_available].isnull().mean()
     drop_factors = missing_pct[missing_pct > 0.05].index.tolist()
     if drop_factors:
         df_sec.drop(columns=drop_factors, inplace=True)
         feat_cols_available = [c for c in feat_cols_available if c not in drop_factors]
 
-    # ── Drop stock with most missing data (if any remain) ─────────────────
+
     miss_by_stock = df_sec.groupby('tic')[feat_cols_available].apply(
         lambda x: x.isnull().sum().sum()
     )
@@ -224,7 +188,6 @@ for sector, sname in GICS_NAMES.items():
         worst_tic = miss_by_stock.idxmax()
         df_sec = df_sec[df_sec['tic'] != worst_tic].copy()
 
-    # ── Drop rows that still have NaN in any feature or y_return ─────────
     keep_cols = feat_cols_available + ['y_return']
     df_sec.dropna(subset=keep_cols, inplace=True)
     df_sec.reset_index(drop=True, inplace=True)
@@ -246,9 +209,6 @@ for sector, sname in GICS_NAMES.items():
 
     all_sector_dfs.append(df_sec)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Save combined final_ratios.csv
-# ─────────────────────────────────────────────────────────────────────────────
 final_ratios = pd.concat(all_sector_dfs, ignore_index=True)
 final_ratios.to_csv(os.path.join(OUTPUT_DIR, 'final_ratios.csv'), index=False)
 
